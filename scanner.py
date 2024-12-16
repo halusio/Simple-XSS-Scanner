@@ -1,79 +1,79 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-import time
+import requests
+from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
+from urllib3.exceptions import InsecureRequestWarning
+from urllib3 import disable_warnings
 
-def check_xss_via_form(target_url, input_field_id, payload):
+# Nonaktifkan peringatan SSL untuk pengujian pada localhost
+disable_warnings(InsecureRequestWarning)
+
+def inject_payload_to_url(url, param, payload):
     """
-    Mengecek potensi XSS dengan menyuntikkan payload ke kolom input form.
+    Menyuntikkan payload ke parameter tertentu dalam URL.
+    """
+    # Parse URL
+    parsed_url = urlparse(url)
+    query_params = parse_qs(parsed_url.query)
+
+    # Tambahkan payload ke parameter tertentu
+    query_params[param] = payload
+
+    # Rekonstruksi URL dengan parameter payload
+    new_query = urlencode(query_params, doseq=True)
+    new_url = urlunparse(parsed_url._replace(query=new_query))
+    return new_url
+
+def check_xss(url, param, payload):
+    """
+    Mengecek potensi XSS dengan mengirimkan payload ke parameter tertentu.
     
-    :param target_url: URL target halaman web
-    :param input_field_id: ID atau nama kolom input yang akan diuji
+    :param url: URL target
+    :param param: Parameter untuk diuji
     :param payload: Payload XSS untuk diuji
     """
-    # Konfigurasi browser (gunakan mode headless jika diperlukan)
-    chrome_options = Options()
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--ignore-certificate-errors")  # Abaikan SSL
-    chrome_options.add_argument("--headless")  # Jalankan browser tanpa GUI (opsional)
-
-    # Path ke driver Chrome (ubah sesuai dengan lokasi chromedriver Anda)
-    driver_path = "chromedriver"
-
-    # Mulai browser
-    driver = webdriver.Chrome(service=Service(driver_path), options=chrome_options)
-    
+    print(f"\nMenguji parameter '{param}' dengan payload: {payload}")
     try:
-        # Buka halaman target
-        print(f"Membuka URL: {target_url}")
-        driver.get(target_url)
+        # Buat URL dengan payload
+        test_url = inject_payload_to_url(url, param, payload)
         
-        # Tunggu sebentar untuk memastikan halaman termuat
-        time.sleep(2)
+        # Kirim permintaan GET
+        response = requests.get(test_url, verify=False, timeout=10)
         
-        # Temukan kolom input
-        input_field = driver.find_element(By.ID, input_field_id)  # Bisa diganti dengan By.NAME atau By.CSS_SELECTOR
-        print(f"Kolom input ditemukan: {input_field_id}")
-        
-        # Masukkan payload XSS ke kolom input
-        print(f"Menyuntikkan payload: {payload}")
-        input_field.clear()
-        input_field.send_keys(payload)
-        
-        # Kirim formulir (tekan Enter)
-        input_field.send_keys(Keys.RETURN)
-        
-        # Tunggu beberapa saat untuk melihat respons
-        time.sleep(2)
-        
-        # Cek apakah payload tercermin di halaman
-        page_source = driver.page_source
-        if payload in page_source:
-            print("⚠️ Potensi XSS ditemukan! Payload tercermin di halaman.")
+        # Cek apakah payload tercermin dalam respons
+        if payload in response.text:
+            print(f"⚠️  Potensi XSS ditemukan pada parameter '{param}'!")
+            print(f"URL: {test_url}")
         else:
-            print("✅ Halaman aman dari XSS (payload tidak tercermin).")
-    
-    except Exception as e:
-        print(f"Terjadi kesalahan: {e}")
-    
-    finally:
-        # Tutup browser
-        driver.quit()
+            print(f"✅ Parameter '{param}' aman dari XSS.")
+    except requests.RequestException as e:
+        print(f"Terjadi kesalahan saat mengakses {url}: {e}")
 
 if __name__ == "__main__":
-    print("XSS Checker via Form Input")
+    print("Simple XSS Scanner")
     
     # Masukkan URL target
     target_url = input("Masukkan URL target (contoh: http://localhost/page.php): ").strip()
     
-    # Masukkan ID kolom input
-    input_field_id = input("Masukkan ID atau nama kolom input (contoh: search): ").strip()
+    # Tampilkan opsi parameter
+    print("\nPilih parameter untuk diuji:")
+    print("1. q")
+    print("2. search")
+    print("3. filter")
     
-    # Payload XSS sederhana
-    payload = "<script>alert('XSS')</script>"
+    # Pilihan parameter
+    param_options = {
+        "1": "q",
+        "2": "search",
+        "3": "filter"
+    }
+    param_choice = input("Masukkan pilihan (1/2/3): ").strip()
+    param = param_options.get(param_choice)
     
-    print(f"\nMenggunakan payload XSS: {payload}")
-    check_xss_via_form(target_url, input_field_id, payload)
+    if not param:
+        print("Pilihan tidak valid. Program dihentikan.")
+    else:
+        # Payload XSS sederhana
+        payload = "<script>alert('XSS')</script>"
+        print(f"\nMenggunakan payload XSS: {payload}")
+        
+        # Uji XSS pada parameter yang dipilih
+        check_xss(target_url, param, payload)
